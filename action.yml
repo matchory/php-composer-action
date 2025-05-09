@@ -1,5 +1,5 @@
-name: 'composer-action'
-author: 'matchory'
+name: PHP Composer Action
+author: Matchory GmbH
 description: 'Run Composer commands in a GitHub Action.'
 inputs:
   command:
