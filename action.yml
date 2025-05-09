@@ -1,0 +1,155 @@
+name: 'composer-action'
+author: 'matchory'
+description: 'Run Composer commands in a GitHub Action.'
+inputs:
+  command:
+    description: |-
+      Arguments to pass to composer. Accepts any valid Composer command args. If "install" (the default) or "update", it
+      will run the command with the configured option flags.
+    required: true
+    default: 'install'
+  prefer:
+    description: 'Specify package source preference. Must be one of: "auto", "dist", or "source".'
+    required: false
+    default: 'auto'
+  no-dev:
+    description: 'Disables installation of require-dev packages.'
+    required: false
+    default: 'false'
+  autoloader:
+    description: 'Configures autoloader generation. Must be one of: "true", "false", "optimize", "classmap", or "apcu".'
+    required: false
+    default: 'optimize'
+  audit:
+    description: |-
+      Run an audit after installation is complete. Also takes an audit format name.
+      Must be one of: "true" (equivalent to "summary"), "false", "table", or "plain", "json", or "summary".
+    required: false
+    default: 'false'
+  ignore-platform-reqs:
+    description: |-
+      Ignore platform requirements. Must be one of: "true", "false", or a comma-separated list of platform requirements 
+      to ignore.
+    required: false
+    default: 'false'
+  verbosity:
+    description: 'Set the verbosity level. Must be one of: "normal", "quiet", "verbose", "very-verbose", or "debug".'
+    required: false
+    default: 'normal'
+  working-directory:
+    description: 'The working directory to run the command in.'
+    required: false
+  no-plugins:
+    description: 'Whether to disable plugins.'
+    required: false
+    default: 'false'
+  no-scripts:
+    description: 'Skips the execution of all scripts defined in composer.json file.'
+    required: false
+    default: 'false'
+  cache:
+    description: 'Whether to use cache.'
+    required: false
+    default: 'true'
+  artifact:
+    description: 'Name of generated artifact.'
+    required: false
+    default: ''
+  artifact-path:
+    description: 'Path of generated artifact.'
+    required: false
+    default: 'vendor.tar.gz'
+  artifact-retention-days:
+    description: 'Number of days that the artifact should be retained for.'
+    required: false
+    default: '7'
+
+outputs:
+  artifact:
+    description: 'Name of the generated vendor artifact.'
+    value: ${{ inputs.artifact }}
+  artifact-path:
+    description: 'Path of generated vendor artifact.'
+    value: ${{ inputs.artifact-path }}
+  composer-cache-dir:
+    description: 'Composer cache directory.'
+    value: ${{ steps.composer-cache.outputs.dir }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set shared settings
+      id: shared-settings
+      env:
+        SHARED_COMPOSER_FLAGS: >-
+          --no-interaction \
+          --no-progress \
+          ${{ inputs.no-plugins == 'true' && '--no-plugins' || '' }} \
+          ${{ inputs.no-scripts == 'true' && '--no-scripts' || '' }} \
+          ${{ inputs.verbosity == 'quiet' && '--quiet' || '' }} \
+          ${{ inputs.verbosity == 'verbose' && '--verbose' || '' }} \
+          ${{ inputs.verbosity == 'very-verbose' && '-vv' || '' }} \
+          ${{ inputs.verbosity == 'debug' && '-vvv' || '' }} \
+          ${{ inputs.working-directory != '' && format('--working-dir={0}', inputs.working-directory) || '' }}
+      shell: bash
+      # language=bash
+      run: echo "flags=${{ env.SHARED_COMPOSER_FLAGS }}" >> $GITHUB_OUTPUT
+
+    - name: Get Composer Cache Directory
+      if: inputs.cache == 'true'
+      id: composer-cache
+      shell: bash
+      # language=bash
+      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+    - name: Cache dependencies
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer-
+
+    - name: Install dependencies
+      id: install
+      if: inputs.args == 'install' || inputs.args == 'update'
+      shell: bash
+      # language=bash
+      run: >-
+        composer ${{ inputs.args }} ${{ steps.shared-settings.outputs.flags }} \
+          ${{ inputs.no-dev == 'true' && '--no-dev' || '' }} \
+          ${{ inputs.cachek == 'false' && '--no-cache' || '' }} \
+          ${{ inputs.prefer != '' && format('--prefer-install={0}', inputs.prefer) || '' }} \
+          ${{ inputs.audit != 'false' && '--audit' || '' }} \
+          ${{ (inputs.audit != 'true' && inputs.audit != 'false') && format('--audit-format={0}', inputs.audit) || '' }} \
+          ${{ inputs.autoloader == 'false' && format('--no-autoloader') || '' }} \
+          ${{ inputs.autoloader == 'optimize' && '--optimize' || '' }} \
+          ${{ inputs.autoloader == 'classmap' && '--classmap-authoritative' || '' }} \
+          ${{ inputs.autoloader == 'apcu' && '--apcu-autoloader' || '' }} \
+          ${{ inputs.ignore-platform-reqs == 'true' && '--ignore-platform-reqs' || '' }} \     
+          ${{ (inputs.ignore-platform-reqs != 'true' && inputs.ignore-platform-reqs != 'false') && format('--ignore-platform-req={0}', inputs.ignore-platform-reqs) || '' }} \     
+
+    - name: Run Composer Command
+      if: steps.install.outcome == 'skipped'
+      shell: bash
+      # language=bash
+      run: composer ${{ inputs.args }} ${{ steps.shared-settings.outputs.flags }}
+
+    - name: Compress vendor directory
+      if: inputs.artifact != '' && steps.install.outcome == 'success'
+      shell: bash
+      # language=bash
+      run: tar -czf "${{ inputs.artifact-path }}" vendor/
+
+    - name: Put built assets in Artifacts
+      if: inputs.artifact != '' && steps.install.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact }}
+        path: ${{ inputs.artifact-path }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.artifact-retention-days }}
+
+branding:
+  icon: 'music'
+  color: 'red'
