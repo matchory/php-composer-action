@@ -81,19 +81,20 @@ runs:
     - name: Set shared settings
       id: shared-settings
       env:
+        # A folded scalar joins these lines with spaces into one flag list.
         SHARED_COMPOSER_FLAGS: >-
-          --no-interaction \
-          --no-progress \
-          ${{ inputs.no-plugins == 'true' && '--no-plugins' || '' }} \
-          ${{ inputs.no-scripts == 'true' && '--no-scripts' || '' }} \
-          ${{ inputs.verbosity == 'quiet' && '--quiet' || '' }} \
-          ${{ inputs.verbosity == 'verbose' && '--verbose' || '' }} \
-          ${{ inputs.verbosity == 'very-verbose' && '-vv' || '' }} \
-          ${{ inputs.verbosity == 'debug' && '-vvv' || '' }} \
+          --no-interaction
+          --no-progress
+          ${{ inputs.no-plugins == 'true' && '--no-plugins' || '' }}
+          ${{ inputs.no-scripts == 'true' && '--no-scripts' || '' }}
+          ${{ inputs.verbosity == 'quiet' && '--quiet' || '' }}
+          ${{ inputs.verbosity == 'verbose' && '--verbose' || '' }}
+          ${{ inputs.verbosity == 'very-verbose' && '-vv' || '' }}
+          ${{ inputs.verbosity == 'debug' && '-vvv' || '' }}
           ${{ inputs.working-directory != '' && format('--working-dir={0}', inputs.working-directory) || '' }}
       shell: bash
       # language=bash
-      run: echo "flags=${{ env.SHARED_COMPOSER_FLAGS }}" >> $GITHUB_OUTPUT
+      run: echo "flags=$SHARED_COMPOSER_FLAGS" >> "$GITHUB_OUTPUT"
 
     - name: Get Composer Cache Directory
       if: inputs.cache == 'true'
@@ -104,7 +105,7 @@ runs:
 
     - name: Cache dependencies
       if: inputs.cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ steps.composer-cache.outputs.dir }}
         key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
@@ -114,36 +115,47 @@ runs:
       id: install
       if: inputs.args == 'install' || inputs.args == 'update'
       shell: bash
+      env:
+        COMPOSER_ARGS: ${{ inputs.args }}
+        SHARED_FLAGS: ${{ steps.shared-settings.outputs.flags }}
+        INSTALL_FLAGS: >-
+          ${{ inputs.no-dev == 'true' && '--no-dev' || '' }}
+          ${{ inputs.cachek == 'false' && '--no-cache' || '' }}
+          ${{ inputs.prefer != '' && format('--prefer-install={0}', inputs.prefer) || '' }}
+          ${{ inputs.audit != 'false' && '--audit' || '' }}
+          ${{ (inputs.audit != 'true' && inputs.audit != 'false') && format('--audit-format={0}', inputs.audit) || '' }}
+          ${{ inputs.autoloader == 'false' && '--no-autoloader' || '' }}
+          ${{ inputs.autoloader == 'optimize' && '--optimize' || '' }}
+          ${{ inputs.autoloader == 'classmap' && '--classmap-authoritative' || '' }}
+          ${{ inputs.autoloader == 'apcu' && '--apcu-autoloader' || '' }}
+          ${{ inputs.ignore-platform-reqs == 'true' && '--ignore-platform-reqs' || '' }}
+          ${{ (inputs.ignore-platform-reqs != 'true' && inputs.ignore-platform-reqs != 'false') && format('--ignore-platform-req={0}', inputs.ignore-platform-reqs) || '' }}
+      # Unquoted on purpose: each variable holds several space-separated
+      # arguments, and empty flags must disappear.
       # language=bash
-      run: >-
-        composer ${{ inputs.args }} ${{ steps.shared-settings.outputs.flags }} \
-          ${{ inputs.no-dev == 'true' && '--no-dev' || '' }} \
-          ${{ inputs.cachek == 'false' && '--no-cache' || '' }} \
-          ${{ inputs.prefer != '' && format('--prefer-install={0}', inputs.prefer) || '' }} \
-          ${{ inputs.audit != 'false' && '--audit' || '' }} \
-          ${{ (inputs.audit != 'true' && inputs.audit != 'false') && format('--audit-format={0}', inputs.audit) || '' }} \
-          ${{ inputs.autoloader == 'false' && format('--no-autoloader') || '' }} \
-          ${{ inputs.autoloader == 'optimize' && '--optimize' || '' }} \
-          ${{ inputs.autoloader == 'classmap' && '--classmap-authoritative' || '' }} \
-          ${{ inputs.autoloader == 'apcu' && '--apcu-autoloader' || '' }} \
-          ${{ inputs.ignore-platform-reqs == 'true' && '--ignore-platform-reqs' || '' }} \     
-          ${{ (inputs.ignore-platform-reqs != 'true' && inputs.ignore-platform-reqs != 'false') && format('--ignore-platform-req={0}', inputs.ignore-platform-reqs) || '' }} \     
+      run: composer $COMPOSER_ARGS $SHARED_FLAGS $INSTALL_FLAGS
 
     - name: Run Composer Command
       if: steps.install.outcome == 'skipped'
       shell: bash
+      env:
+        COMPOSER_ARGS: ${{ inputs.args }}
+        SHARED_FLAGS: ${{ steps.shared-settings.outputs.flags }}
+      # Unquoted on purpose: both variables hold several space-separated arguments.
       # language=bash
-      run: composer ${{ inputs.args }} ${{ steps.shared-settings.outputs.flags }}
+      run: composer $COMPOSER_ARGS $SHARED_FLAGS
 
     - name: Compress vendor directory
       if: inputs.artifact != '' && steps.install.outcome == 'success'
       shell: bash
+      env:
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
       # language=bash
-      run: tar -czf "${{ inputs.artifact-path }}" vendor/
+      run: tar -czf "$ARTIFACT_PATH" vendor/
 
     - name: Put built assets in Artifacts
       if: inputs.artifact != '' && steps.install.outcome == 'success'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ inputs.artifact }}
         path: ${{ inputs.artifact-path }}
